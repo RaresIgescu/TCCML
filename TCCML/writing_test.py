@@ -1,15 +1,16 @@
 import os
 import sys
+import pathlib
+from dotenv import load_dotenv
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import current_timestamp
 
-
-# Check for JAVA_HOME
-if "JAVA_HOME" not in os.environ:
-    print("[ERROR] JAVA_HOME is not set. Spark requires Java 8, 11, or 17.")
-    print("Please install Java and set the JAVA_HOME environment variable.")
-    # exit(1) # Optional: exit if Java is missing
+# Load environment variables from .env file
+load_dotenv()
 
 # Set HADOOP_HOME for Windows to fix "HADOOP_HOME and hadoop.home.dir are unset" error
-hadoop_home = os.path.abspath("hadoop")
+base_dir = os.path.dirname(os.path.abspath(__file__))
+hadoop_home = os.path.join(base_dir, "hadoop")
 if os.name == 'nt':
     os.environ["HADOOP_HOME"] = hadoop_home
     os.environ["PATH"] += os.pathsep + os.path.join(hadoop_home, "bin")
@@ -18,13 +19,14 @@ if os.name == 'nt':
 os.environ['PYSPARK_PYTHON'] = sys.executable
 os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable
 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_timestamp, lit
-
 # --- CONFIGURATION ---
-storage_account_name = "datalakesimulation01"
-storage_account_key = ""
-container_name = "simulation-data"
+storage_account_name = os.getenv("STORAGE_ACCOUNT_NAME")
+storage_account_key = os.getenv("AZURE_ACCESS_KEY")
+container_name = os.getenv("CONTAINER_NAME")
+
+if not all([storage_account_name, storage_account_key, container_name]):
+    print("[ERROR] Missing required environment variables. Please check your .env file.")
+    exit(1)
 
 # Initialize Spark Session with Delta Lake support
 packages = [
@@ -33,12 +35,11 @@ packages = [
 ]
 
 # Create a local ivy cache directory to avoid issues with corrupted local .m2 cache
-ivy_cache_dir = os.path.abspath("spark_ivy_cache")
+ivy_cache_dir = os.path.join(base_dir, "spark_ivy_cache")
 if not os.path.exists(ivy_cache_dir):
     os.makedirs(ivy_cache_dir)
 
-import pathlib
-ivy_settings_path = pathlib.Path(os.path.abspath("ivysettings.xml")).as_uri()
+ivy_settings_path = pathlib.Path(os.path.join(base_dir, "ivysettings.xml")).as_uri()
 
 # Set PYSPARK_SUBMIT_ARGS to ensure Ivy settings are picked up during launch
 submit_args = (
@@ -54,16 +55,17 @@ spark = SparkSession.builder \
     .config("spark.python.worker.reuse", "false") \
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-    .config(f"fs.azure.account.key.{storage_account_name}.dfs.core.windows.net", storage_account_key) \
+    .config("spark.sql.debug.maxToStringFields", 1000) \
+    .config(f"spark.hadoop.fs.azure.account.key.{storage_account_name}.dfs.core.windows.net", storage_account_key) \
     .getOrCreate()
 
 print("[*] Spark Session initialized and authenticated.")
 
 # Create sample data representing different geographic regions
 data = [
-    (1, "Sensor_Alpha", "East US", 22.5),
-    (2, "Sensor_Beta", "West Europe", 19.8),
-    (3, "Sensor_Gamma", "North Europe", 21.0)
+    (1, "Sensor_1", "East US", 222.5),
+    (2, "Sensor_2", "West Europe", 119.8),
+    (3, "Sensor_3", "North Europe", 201.0)
 ]
 columns = ["id", "sensor_name", "geo_region", "value"]
 

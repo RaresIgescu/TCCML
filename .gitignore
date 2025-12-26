@@ -1,2 +1,9 @@
 /TCCML/.idea/
+/.venv/
+/.vscode/
+
+/TCCML/hadoop/
+/TCCML/spark_ivy_cache/
+
 .python-version
+.env
