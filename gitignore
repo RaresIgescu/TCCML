@@ -1,4 +1,2 @@
-/.idea/
-/.pytest_cache/
-/__pycache__/
-/.venv/
+/TCCML/.idea/
+.python-version
