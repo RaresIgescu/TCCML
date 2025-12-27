@@ -2,8 +2,8 @@
 /.venv/
 /.vscode/
 
-/TCCML/hadoop/
-/TCCML/spark_ivy_cache/
+/src/hadoop/
+/src/spark_ivy_cache/
 
 .python-version
 .env

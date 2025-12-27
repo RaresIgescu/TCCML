@@ -10,13 +10,13 @@ load_dotenv()
 
 # Set HADOOP_HOME for Windows to fix "HADOOP_HOME and hadoop.home.dir are unset" error
 base_dir = os.path.dirname(os.path.abspath(__file__))
-hadoop_home = os.path.join(base_dir, "hadoop")
+hadoop_home = os.path.join(base_dir, "../hadoop")
 if os.name == 'nt':
     os.environ["HADOOP_HOME"] = hadoop_home
     os.environ["PATH"] += os.pathsep + os.path.join(hadoop_home, "bin")
 
 # Set PYSPARK_PYTHON and PYSPARK_DRIVER_PYTHON to the current python executable
-os.environ['PYSPARK_PYTHON'] = sys.executable
+os.environ['PYSPARK_PYTHON'] = sys.executablei8bunhbbbb
 os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable
 
 # --- CONFIGURATION ---
@@ -35,11 +35,11 @@ packages = [
 ]
 
 # Create a local ivy cache directory to avoid issues with corrupted local .m2 cache
-ivy_cache_dir = os.path.join(base_dir, "spark_ivy_cache")
+ivy_cache_dir = os.path.join(base_dir, "../spark_ivy_cache")
 if not os.path.exists(ivy_cache_dir):
     os.makedirs(ivy_cache_dir)
 
-ivy_settings_path = pathlib.Path(os.path.join(base_dir, "ivysettings.xml")).as_uri()
+ivy_settings_path = pathlib.Path(os.path.join(base_dir, "../ivysettings.xml")).as_uri()
 
 # Set PYSPARK_SUBMIT_ARGS to ensure Ivy settings are picked up during launch
 submit_args = (
