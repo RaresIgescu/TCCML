@@ -1,16 +1,19 @@
 import os
 import sys
 import pathlib
+import random
+import argparse
+from threading import Thread
 from dotenv import load_dotenv
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_timestamp
+from pyspark.sql.functions import current_timestamp, lit
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Set HADOOP_HOME for Windows to fix "HADOOP_HOME and hadoop.home.dir are unset" error
 base_dir = os.path.dirname(os.path.abspath(__file__))
-hadoop_home = os.path.join(base_dir, "../hadoop")
+hadoop_home = os.path.join(base_dir, "hadoop")
 if os.name == 'nt':
     os.environ["HADOOP_HOME"] = hadoop_home
     os.environ["PATH"] += os.pathsep + os.path.join(hadoop_home, "bin")
@@ -35,11 +38,11 @@ packages = [
 ]
 
 # Create a local ivy cache directory to avoid issues with corrupted local .m2 cache
-ivy_cache_dir = os.path.join(base_dir, "../spark_ivy_cache")
+ivy_cache_dir = os.path.join(base_dir, "spark_ivy_cache")
 if not os.path.exists(ivy_cache_dir):
     os.makedirs(ivy_cache_dir)
 
-ivy_settings_path = pathlib.Path(os.path.join(base_dir, "../ivysettings.xml")).as_uri()
+ivy_settings_path = pathlib.Path(os.path.join(base_dir, "ivysettings.xml")).as_uri()
 
 # Set PYSPARK_SUBMIT_ARGS to ensure Ivy settings are picked up during launch
 submit_args = (
@@ -51,7 +54,7 @@ submit_args = (
 os.environ['PYSPARK_SUBMIT_ARGS'] = submit_args
 
 spark = SparkSession.builder \
-    .appName("DeltaLakeResilienceSimulation") \
+    .appName("DeltaLakeConcurrentWrite") \
     .config("spark.python.worker.reuse", "false") \
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
@@ -61,21 +64,29 @@ spark = SparkSession.builder \
 
 print("[*] Spark Session initialized and authenticated.")
 
-# Create sample data representing different geographic regions
-data = [
-    (1, "Sensor_1", "East US", 222.5),
-    (2, "Sensor_2", "West Europe", 119.8),
-    (3, "Sensor_3", "North Europe", 201.0)
-]
-columns = ["id", "sensor_name", "geo_region", "value"]
-
-df = spark.createDataFrame(data, columns).withColumn("processed_at", current_timestamp())
-
-# Define the ADLS Gen2 path (ABFSS protocol)
+# Define the ADLS Gen2 path
 adls_path = f"abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/sensor_resilience_table"
 
-# Write the data in Delta format
-print(f"[*] Writing Delta table to {adls_path}...")
-df.write.format("delta").mode("overwrite").save(adls_path)
+print("[*] Reading sensor data for id=26 (Paris)...")
 
-print("[SUCCESS] Delta table is now live in your Data Lake.")
+# Read Delta table
+df = spark.read.format("delta").load(adls_path)
+
+# Filter for sensor id 26 in Paris
+df_paris = df.filter((df.id == 26) & (df.capital_name == "Paris"))
+
+# Display the filtered data
+print("[*] Data from sensor id=26 in Paris:")
+df_paris.show(truncate=False)
+
+# Show count and statistics
+count = df_paris.count()
+print(f"\n[*] Total records for sensor 26 (Paris): {count}")
+
+if count > 0:
+    print("[*] Value statistics:")
+    df_paris.select("value").describe().show()
+
+    print("[SUCCESS] Data retrieved successfully for Paris sensor (id=26).")
+else:
+    print("[WARNING] No data found for sensor id=26 in Paris.")
