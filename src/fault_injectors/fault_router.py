@@ -1,7 +1,7 @@
 import os
 import threading
-from fault_injector.latency_injection import LatencyInjector
-from fault_injector.region_failure import RegionFailureInjector
+from src.fault_injectors.latency_injection import LatencyInjector
+from src.fault_injectors.region_failure import RegionFailureInjector
 
 class FaultRouter:
     def __init__(self, spark, storage_account_name):

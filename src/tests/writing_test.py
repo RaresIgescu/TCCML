@@ -4,7 +4,7 @@ import pathlib
 from dotenv import load_dotenv
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import current_timestamp
-from fault_injector.fault_router import FaultRouter
+from src.fault_injectors.fault_router import FaultRouter
 
 # Azure credentials configuration from .env file
 load_dotenv()
