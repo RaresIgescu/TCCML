@@ -4,6 +4,7 @@ import pathlib
 from dotenv import load_dotenv
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import current_timestamp
+from fault_injector.fault_router import FaultRouter
 
 # Load environment variables from .env file
 load_dotenv()
@@ -50,6 +51,7 @@ submit_args = (
 )
 os.environ['PYSPARK_SUBMIT_ARGS'] = submit_args
 
+
 spark = SparkSession.builder \
     .appName("DeltaLakeResilienceSimulation") \
     .config("spark.python.worker.reuse", "false") \
@@ -60,6 +62,12 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 print("[*] Spark Session initialized and authenticated.")
+
+
+fault_router = FaultRouter(
+    spark=spark,
+    storage_account_name=storage_account_name
+)
 
 # Create sample data representing different geographic regions
 data = [
@@ -76,6 +84,9 @@ adls_path = f"abfss://{container_name}@{storage_account_name}.dfs.core.windows.n
 
 # Write the data in Delta format
 print(f"[*] Writing Delta table to {adls_path}...")
+
+fault_router.before_write() 
+
 df.write.format("delta").mode("overwrite").save(adls_path)
 
 print("[SUCCESS] Delta table is now live in your Data Lake.")
