@@ -1,4 +1,3 @@
-# fault_injector/region_failure.py
 import time
 
 class RegionFailureInjector:

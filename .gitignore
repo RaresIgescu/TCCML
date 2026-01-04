@@ -4,7 +4,9 @@
 
 /src/hadoop/
 /src/spark_ivy_cache/
+
 /src/workload/__pycache__/
+/src/fault_injectors/__pycache__/
 
 .python-version
 .env

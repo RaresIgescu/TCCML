@@ -1,25 +1,36 @@
 import argparse
 import time
+import sys
+import os
+
+# Add parent directory to path to allow importing from sibling directories
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from pyspark.sql.functions import current_timestamp, lit
 from delta.tables import DeltaTable
 from config import get_spark_session
+from fault_injectors.fault_router import FaultRouter
 
 
 def write_data(city, sensor_id, new_value, sleep_time = 0):
 
     # Unique AppName helps debug in Spark UI( http://localhost:4040 )
     spark, adls_path = get_spark_session(f"Writer_{city}_{sensor_id}")
+    storage_account_name = os.getenv("STORAGE_ACCOUNT_NAME")
+
     # Clean console output, set to WARN or INFO for more details/debuggings
     spark.sparkContext.setLogLevel("ERROR")
     print(f"[*] Writer started for {city} (ID: {sensor_id}). Target Value: {new_value}")
+
+    router = FaultRouter(spark, storage_account_name)
+    router.inject()  # <--- This applies the active fault mode
 
     try:
         # Initialize DeltaTable object (Needed for Updates)
         deltaTable = DeltaTable.forPath(spark, adls_path)
 
-        # Simulate Processing Latency (Optional, for easy conflict testing)
+        # Simulate processing delay to increase chance of OCC conflicts
         if sleep_time > 0:
-            print(f"[*] Sleeping for {sleep_time} seconds to simulate processing...")
             time.sleep(sleep_time)
 
         print("[*] Attempting ACID Update...")
@@ -40,6 +51,7 @@ def write_data(city, sensor_id, new_value, sleep_time = 0):
         print(f"Error Details: {e}")
 
     finally:
+        input("Transaction finished. Press Enter to close Spark UI and exit...")
         spark.stop()
 
 
@@ -48,7 +60,7 @@ if __name__ == "__main__":
     parser.add_argument("--city", type=str, required=True, help="Capital city name")
     parser.add_argument("--id", type=int, required=True, help="Sensor ID")
     parser.add_argument("--value", type=float, required=True, help="New CO2 value")
-    parser.add_argument("--sleep", type=int, default=0, help="Simulate delay (seconds)")
+    parser.add_argument("--sleep", type=float, default=0.0, help="Simulate delay (seconds)")
 
     args = parser.parse_args()
     write_data(args.city, args.id, args.value, args.sleep)

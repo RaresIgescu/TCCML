@@ -6,7 +6,7 @@ import argparse
 
 # Configuration for the simulation
 PYTHON_EXECUTABLE = sys.executable
-WRITER_SCRIPT = "workload/writer.py"
+WRITER_SCRIPT = "src/workload/writer.py"
 
 
 def run_simulation(city, sensor_id, num_writers, latency_max):
