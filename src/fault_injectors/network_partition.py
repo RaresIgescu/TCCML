@@ -1,53 +1,38 @@
-import time
-import random
-
 class NetworkPartitionInjector:
     """
-    Simulates a network partition by intermittently
-    enabling and disabling access to ADLS Gen2.
+    Simulates a network partition by closing existing connections
+    and routing new traffic to a blackhole IP (Dead Proxy).
     """
 
-    def __init__(self, spark, storage_account_name, partition_probability=0.5):
+    def __init__(self, spark, storage_account_name):
         self.spark = spark
-        self.storage_account_name = storage_account_name
-        self.partition_probability = partition_probability
+        self.account = storage_account_name
 
-        self.conf_key = (
-            f"spark.hadoop.fs.azure.account.key."
-            f"{storage_account_name}.dfs.core.windows.net"
-        )
+    def inject_partition(self):
+        print("[FAULT] NETWORK PARTITION – Hard-cutting storage link")
 
-        self.original_key = spark.conf.get(self.conf_key, None)
+        sc = self.spark.sparkContext
+        # Access the Java Hadoop Configuration
+        hadoop_conf = sc._jsc.hadoopConfiguration()
 
-    def inject(self, duration_sec=30, interval_sec=3):
-        """
-        Simulates intermittent network connectivity.
+        # 1. THE NUCLEAR OPTION: Close all cached FileSystem instances in the JVM.
+        # This forces Spark to look at our poisoned config for the next request.
+        try:
+            sc._gateway.jvm.org.apache.hadoop.fs.FileSystem.closeAll()
+            print("[DEBUG] Purged JVM FileSystem Cache")
+        except Exception as e:
+            print(f"[DEBUG] Cache purge failed: {e}")
 
-        :param duration_sec: total duration of the partition simulation
-        :param interval_sec: interval at which connectivity changes
-        """
+        # 2. Credential Poisoning
+        # Remove the key so it cannot authenticate even if it reaches Azure.
+        key_name = f"fs.azure.account.key.{self.account}.dfs.core.windows.net"
+        hadoop_conf.unset(key_name)
+        hadoop_conf.set(key_name, "PARTITION_ERROR")
 
-        print("[FAULT] Network partition simulation started")
+        # 3. Protocol Sabotage
+        # Change the auth type to something non-existent to break the handshake.
+        hadoop_conf.set(f"fs.azure.account.auth.type.{self.account}.dfs.core.windows.net", "BrokenLink")
 
-        start_time = time.time()
-
-        while time.time() - start_time < duration_sec:
-            partitioned = random.random() < self.partition_probability
-
-            if partitioned:
-                # Simulate network cut
-                print("[FAULT] Network PARTITIONED (storage unreachable)")
-                self.spark.conf.set(self.conf_key, "INVALID_KEY")
-            else:
-                # Restore network
-                print("[FAULT] Network CONNECTED (storage reachable)")
-                if self.original_key:
-                    self.spark.conf.set(self.conf_key, self.original_key)
-
-            time.sleep(interval_sec)
-
-        # Ensure network is restored at the end
-        if self.original_key:
-            self.spark.conf.set(self.conf_key, self.original_key)
-
-        print("[FAULT] Network partition simulation ended – connectivity restored")
+        # 4. Immediate Timeout
+        hadoop_conf.set("fs.azure.io.retry.max.retries", "0")
+        hadoop_conf.set("fs.azure.connect.timeout", "10")  # 10ms

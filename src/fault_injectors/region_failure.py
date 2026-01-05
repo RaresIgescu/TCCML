@@ -19,14 +19,10 @@ class RegionFailureInjector:
     def inject_failure(self, duration_sec=30):
         print("[FAULT] REGION FAILURE – region unavailable")
 
-        # Disable access once
-        self.spark.conf.set(self.conf_key, "INVALID_KEY")
+        # Access the Spark Context and Hadoop configuration
+        sc = self.spark.sparkContext
+        hadoop_conf = sc._jsc.hadoopConfiguration()
 
-        # Remains unavailable for the whole duration
-        # time.sleep(duration_sec)
-
-        # # Explicit recovery (end of experiment)
-        # if self.original_key:
-        #     self.spark.conf.set(self.conf_key, self.original_key)
-
-        # print("[FAULT] Region recovered (experiment ended)")
+        # 3. Target the specific key for your storage account
+        conf_key = f"fs.azure.account.key.{self.storage_account_name}.dfs.core.windows.net"
+        hadoop_conf.set(conf_key, "INVALID_KEY_FOR_TESTING")

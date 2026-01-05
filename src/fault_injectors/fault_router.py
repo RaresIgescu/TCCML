@@ -1,17 +1,21 @@
 import os
-import time
 from fault_injectors.latency_injection import LatencyInjector
 from fault_injectors.region_failure import RegionFailureInjector
+from fault_injectors.network_partition import NetworkPartitionInjector
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class FaultRouter:
     def __init__(self, spark, storage_account_name):
         self.mode = os.getenv("FAULT_MODE", "none").lower()
+        print(f"[DEBUG] FaultRouter initialized with mode: '{self.mode}'")
         self.spark = spark
 
         # Initialize injectors
         self.latency = LatencyInjector()
         self.region = RegionFailureInjector(spark, storage_account_name)
+        self.partition = NetworkPartitionInjector(spark, storage_account_name)
 
     def inject(self):
         """
@@ -26,7 +30,7 @@ class FaultRouter:
 
         elif self.mode == "network_partition":
             # Logic to change protocol or timeout
-            self.spark.conf.set("spark.network.timeout", "1s")
+            self.partition.inject_partition()
 
         elif self.mode == "none":
             pass

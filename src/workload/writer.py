@@ -3,6 +3,8 @@ import time
 import sys
 import os
 
+from dotenv import load_dotenv
+
 # Add parent directory to path to allow importing from sibling directories
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -14,11 +16,12 @@ from fault_injectors.fault_router import FaultRouter
 
 def write_data(city, sensor_id, new_value, sleep_time = 0):
 
+    load_dotenv()
     # Unique AppName helps debug in Spark UI( http://localhost:4040 )
     spark, adls_path = get_spark_session(f"Writer_{city}_{sensor_id}")
     storage_account_name = os.getenv("STORAGE_ACCOUNT_NAME")
 
-    # Clean console output, set to WARN or INFO for more details/debuggings
+    # Clean console output, set to WARN or INFO for more details/debugging
     spark.sparkContext.setLogLevel("ERROR")
     print(f"[*] Writer started for {city} (ID: {sensor_id}). Target Value: {new_value}")
 
@@ -48,10 +51,15 @@ def write_data(city, sensor_id, new_value, sleep_time = 0):
     # OCC failures
     except Exception as e:
         print(f"[CONFLICT] Transaction failed for {city}!")
-        print(f"Error Details: {e}")
+        print(f"[ERROR] Details: {e}")
+
+        if os.getenv("FAULT_MODE") == "network_partition":
+            print("[DEBUG] Force-killing process to avoid shutdown hang.")
+            sys.stdout.flush()  # Ensure logs are pushed out before dying
+            os._exit(1)
 
     finally:
-        input("Transaction finished. Press Enter to close Spark UI and exit...")
+        # input("Transaction finished. Press Enter to close Spark UI and exit...")
         spark.stop()
 
 

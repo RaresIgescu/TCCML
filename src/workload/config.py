@@ -56,6 +56,7 @@ def get_spark_session(app_name="ResilienceSimulation"):
     spark = SparkSession.builder \
         .appName(app_name) \
         .config("spark.python.worker.reuse", "false") \
+        .config("spark.ui.showConsoleProgress", "false") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
         .config(f"spark.hadoop.fs.azure.account.key.{storage_account_name}.dfs.core.windows.net", storage_account_key) \

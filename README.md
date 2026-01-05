@@ -25,4 +25,10 @@ python src/workload/reader.py --city Paris --id 26
 The arguments can be ommited for the city, in which case all the values in the table will be printed.
 Also, it is not necesarry for all the arguments to be used.
 
+Writer example:
 python src/workload/writer.py --city Paris --id 26 --value 450.5
+
+Before running a writer script, an environment variable can be set in the shell to inject a fault:
+$env:FAULT_MODE = "network_partition"
+
+Other values: "latency", "region_failure" and "none".
