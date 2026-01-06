@@ -32,3 +32,9 @@ Before running a writer script, an environment variable can be set in the shell 
 $env:FAULT_MODE = "network_partition"
 
 Other values: "latency", "region_failure" and "none".
+
+A whole benchmark can be run with:
+python run_benchmark.py
+
+Generate OCC graph:
+python src/metrics/analyzer.py

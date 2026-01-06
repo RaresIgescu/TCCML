@@ -13,7 +13,6 @@ from delta.tables import DeltaTable
 from config import get_spark_session
 from fault_injectors.fault_router import FaultRouter
 
-
 def write_data(city, sensor_id, new_value, sleep_time = 0):
 
     load_dotenv()
@@ -60,7 +59,13 @@ def write_data(city, sensor_id, new_value, sleep_time = 0):
 
     finally:
         # input("Transaction finished. Press Enter to close Spark UI and exit...")
-        spark.stop()
+        if 'spark' in locals():
+            print("[DEBUG] Stopping Spark Session...")
+            spark.stop()
+
+        print("[DEBUG] Process exiting...")
+        sys.stdout.flush()
+        os._exit(0)
 
 
 if __name__ == "__main__":
@@ -71,4 +76,10 @@ if __name__ == "__main__":
     parser.add_argument("--sleep", type=float, default=0.0, help="Simulate delay (seconds)")
 
     args = parser.parse_args()
-    write_data(args.city, args.id, args.value, args.sleep)
+
+    # Move sleep here to stagger Spark session creation and avoid Ivy lock contention
+    if args.sleep > 0:
+        print(f"[DEBUG] Staggering start. Sleeping for {args.sleep:.2f}s...")
+        time.sleep(args.sleep)
+
+    write_data(args.city, args.id, args.value, 0) # Pass 0 because we already slept

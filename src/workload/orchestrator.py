@@ -1,13 +1,35 @@
 import sys
+import os
 import random
 import argparse
 import subprocess
 import threading
+import time
 
 # Configuration for the simulation
 PYTHON_EXECUTABLE = sys.executable
-WRITER_SCRIPT = "src/workload/writer.py"
-VALID_TAGS = ["[SUCCESS]", "[CONFLICT]", "[FAULT]", "[*]", "[LATENCY]", "[ERROR]", "[DEBUG]", "Timeout", "SocketException"]
+base_dir = os.path.dirname(os.path.abspath(__file__))
+WRITER_SCRIPT = os.path.join(base_dir, "writer.py")
+# WRITER_SCRIPT = "src/workload/writer.py"
+
+VALID_TAGS = [
+    "[SUCCESS]", "[CONFLICT]", "[FAULT]", "[*]", 
+    "[LATENCY]", "[ERROR]", "[DEBUG]", "Timeout", "SocketException",
+    "Traceback", "File \"", "Error:", "Exception"
+]
+
+# Phrases to explicitly silence (Spark Windows file deletion noise)
+IGNORED_PHRASES = [
+    "ShutdownHookManager: Exception while deleting Spark temp dir",
+    "java.io.IOException: Failed to delete",
+    "java.nio.file.NoSuchFileException",
+    "sun.nio.fs.WindowsException",
+    "org.apache.spark.util.Utils$.logUncaughtExceptions",
+    "Cannot invoke \"org.apache.spark.storage.BlockManagerId.executorId()\"",
+    "org.apache.spark.SparkException: Exception thrown in awaitResult:",
+    "at org.apache.spark.rpc.RpcTimeout.awaitResult"
+]
+
 
 def output_filter(process, prefix):
     """
@@ -22,7 +44,11 @@ def output_filter(process, prefix):
 
         # print(f"{prefix} {line}")
 
-        # If the line contains ANY valid tag, print it.
+        # 1. Skip if the line contains any ignored phrases (Windows cleanup noise)
+        if any(ignored in line for ignored in IGNORED_PHRASES):
+            continue
+
+        # 2. If the line contains ANY valid tag, print it.
         if any(tag in line for tag in VALID_TAGS):
             print(f"{prefix} {line}")
 
@@ -40,6 +66,7 @@ def run_simulation(city, sensor_id, num_writers, latency_max):
         # Generez o latenta random pentru a simula conflicte OCC. Fara latenta, toate scrierile ar fi aproape simultane.
         sleep_time = random.uniform(0, latency_max)
 
+        # 1. DEFINE the command list FIRST
         cmd = [
             PYTHON_EXECUTABLE, WRITER_SCRIPT,
             "--city", city,
@@ -50,13 +77,18 @@ def run_simulation(city, sensor_id, num_writers, latency_max):
 
         print(f"[*] Spawning Writer {i + 1} (Delay: {sleep_time:.2f}s, Value: {new_val})...")
 
-        # Popen starts the process in the background immediately
+        # 2. Prepare the environment with the correct PYTHONPATH
+        current_env = os.environ.copy()
+        # Ensure FAULT_MODE is passed through (it comes from run_benchmark.py)
+
+        # 3. NOW call Popen using the defined 'cmd'
         p = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Merge errors into stdout so we can filter them too
+            stderr=subprocess.STDOUT,   # Merge stderr into stdout so we can see crashes
             text=True,
-            bufsize=1  # Line buffered
+            bufsize=1,
+            env=current_env
         )
 
         processes.append(p)
@@ -66,8 +98,30 @@ def run_simulation(city, sensor_id, num_writers, latency_max):
 
     print(f"--- All {num_writers} processes launched. Waiting for completion... ---")
 
+    # Replaces: for t in threads: t.join()
+    # Wait for completion with timeout
+    start_wait = time.time()
+    TIMEOUT_SECONDS = 120  # 2 minutes max per scenario (generous for Spark startup)
+
+    while True:
+        alive_procs = [p for p in processes if p.poll() is None]
+        if not alive_procs:
+            break
+
+        if time.time() - start_wait > TIMEOUT_SECONDS:
+            print(f"\n[TIMEOUT] Simulation timed out after {TIMEOUT_SECONDS}s. Killing remaining processes...")
+            for p in alive_procs:
+                p.terminate()  # Try nice termination first
+                time.sleep(0.5)
+                if p.poll() is None:
+                    p.kill()   # Force kill
+            break
+
+        time.sleep(1)
+
+    # Ensure threads finish (they should since pipes are closed/broken by kill)
     for t in threads:
-        t.join()
+        t.join(timeout=1.0)
 
     success_count = sum(1 for p in processes if p.poll() == 0)
     failure_count = num_writers - success_count
