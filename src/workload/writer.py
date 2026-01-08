@@ -2,6 +2,7 @@ import argparse
 import time
 import sys
 import os
+from idlelib.config_key import translate_key
 
 from dotenv import load_dotenv
 
@@ -26,6 +27,7 @@ def write_data(city, sensor_id, new_value, sleep_time = 0):
 
     router = FaultRouter(spark, storage_account_name)
     router.inject()  # <--- This applies the active fault mode
+    transaction_successful = False
 
     try:
         # Initialize DeltaTable object (Needed for Updates)
@@ -45,27 +47,42 @@ def write_data(city, sensor_id, new_value, sleep_time = 0):
             }
         )
 
+        transaction_successful = True
         print(f"[SUCCESS] Update committed for {city}.")
 
     # OCC failures
     except Exception as e:
         print(f"[CONFLICT] Transaction failed for {city}!")
         print(f"[ERROR] Details: {e}")
+        transaction_successful = False
 
+        # Special handling for Network Partitions
+        # Since the link is severed, spark.stop() will often hang indefinitely
+        # trying to contact the Azure catalog/log. We force-kill here.
         if os.getenv("FAULT_MODE") == "network_partition":
-            print("[DEBUG] Force-killing process to avoid shutdown hang.")
-            sys.stdout.flush()  # Ensure logs are pushed out before dying
-            os._exit(1)
+            print("[DEBUG] Network Partition detected: Force-killing to avoid shutdown hang.")
+            sys.stdout.flush()
+            os._exit(1)  # Exit with error code 1
 
     finally:
-        # input("Transaction finished. Press Enter to close Spark UI and exit...")
+        # 1. Clean up Spark resources if they exist
         if 'spark' in locals():
             print("[DEBUG] Stopping Spark Session...")
-            spark.stop()
+            try:
+                # We wrap this in a try/except because if the network is flaky,
+                # spark.stop() might throw its own exception.
+                spark.stop()
+            except Exception:
+                pass
 
         print("[DEBUG] Process exiting...")
         sys.stdout.flush()
-        os._exit(0)
+
+        # 2. THE CRUCIAL FIX: Signal the actual result to the Orchestrator
+        if transaction_successful:
+            os._exit(0)  # Success
+        else:
+            os._exit(1)  # Failure (This will now be caught by your benchmark)
 
 
 if __name__ == "__main__":
