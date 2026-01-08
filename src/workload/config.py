@@ -60,6 +60,12 @@ def get_spark_session(app_name="ResilienceSimulation"):
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
         .config(f"spark.hadoop.fs.azure.account.key.{storage_account_name}.dfs.core.windows.net", storage_account_key) \
+        .config("spark.driver.memory", "512m") \
+        .config("spark.driver.maxResultSize", "128m") \
+        .config("spark.executor.memory", "512m") \
+        .config("spark.sql.shuffle.partitions", "1") \
+        .config("spark.ui.enabled", "false") \
+        .config("spark.sql.ui.retainedExecutions", "0") \
         .getOrCreate()
 
     # Path-ul pentru protocolul Azure Blob File System Secure, prin care se acceseaza ADLS Gen2

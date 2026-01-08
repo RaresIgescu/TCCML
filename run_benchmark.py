@@ -98,8 +98,8 @@ def main():
     # fault_modes = ["none", "latency", "region_failure", "network_partition"]
 
     # Test parameters (quick run)
-    writer_counts = [3]
-    fault_modes = ["none"]
+    writer_counts = [15]
+    fault_modes = ["region_failure"]
 
     fieldnames = ["timestamp", "writers", "fault_mode", "success", "failed", "conflict_rate", "duration_sec"]
     
