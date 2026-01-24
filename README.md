@@ -1,40 +1,96 @@
-# Project Setup Instructions
+# Delta Lake Resilience & OCC Benchmark
 
-## 1. Environment Setup
-It is recommended to use a virtual environment to keep dependencies isolated.
-It is necesarry to use Python 3.8, 3.9 or 3.10.
-Also, hadoop needs to be installed in the root folder of the project, next to a spark_ivy_cache folder.
+### Empirical Analysis of Optimistic Concurrency Control (OCC) in Distributed Systems
 
-### Create and Activate Virtual Environment
-Open your terminal in the project root and run:
+![Scala](https://img.shields.io/badge/Language-Scala-red)
+![Spark](https://img.shields.io/badge/Engine-Apache%20Spark-orange)
+![Delta Lake](https://img.shields.io/badge/Storage-Delta%20Lake-blue)
+![Azure](https://img.shields.io/badge/Cloud-Azure%20ADLS%20Gen2-0078D4)
+
+---
+
+## 📖 Abstract
+
+This project is a rigorous benchmark suite designed to evaluate the resilience, consistency, and performance of **Delta Lake's Optimistic Concurrency Control (OCC)** protocol under high-concurrency scenarios and simulated distributed system failures.
+
+The system orchestrates concurrent writers using **Scala Futures** and **Apache Spark**, interacting directly with **Azure Data Lake Storage (ADLS) Gen2**. It tests whether ACID guarantees hold when the underlying infrastructure suffers from latency, network partitions, or regional outages.
+
+---
+
+## 🏗️ Architecture & Evolution
+
+### From Python to Scala
+The project initially started as a Python prototype (archived in `legacy_python_prototype/`). However, due to the **Global Interpreter Lock (GIL)** in Python, true parallelism was difficult to achieve for high-concurrency benchmarks. 
+
+The core engine was **re-engineered in Scala** to leverage the JVM's native multi-threading capabilities, allowing for accurate simulation of 50+ concurrent writers fighting for the same Delta Lake transaction log.
+
+### Workflow
+1.  **Initialization:** A single Spark Driver initializes the connection to Azure.
+2.  **Orchestration:** A thread pool spawns concurrent writers.
+3.  **Fault Injection:** Before writing, threads are subjected to random latency, timeouts, or connection drops based on the selected scenario.
+4.  **Transaction:** Writers attempt to update a specific row in the Delta Table.
+5.  **OCC Check:** Delta Lake verifies protocol versions.
+    * **Success:** Write is committed.
+    * **Conflict:** A `ConcurrentModificationException` is caught and logged.
+    * **Failure:** Infrastructure errors (e.g., timeouts) are logged.
+
+---
+
+## 🚀 Key Features
+
+* **Native Windows Portability:** Includes a bundled `hadoop/` directory with `winutils.exe` and `hadoop.dll`. The application programmatically loads these binaries, allowing it to **run on Windows out-of-the-box** without modifying `System32` or Environment Variables.
+* **Scientific Fault Injection:**
+    * **Latency Injection:** Simulates variable network lag (200ms - 1000ms).
+    * **Network Partition:** Simulates a "Split-Brain" scenario where 50% of nodes lose connectivity (Timeouts).
+    * **Region Failure:** Simulates total unavailability of the storage endpoint.
+* **Automated Analytics:** Python scripts (`results/`) automatically generate conflict curves and failure rate graphs from the benchmark logs.
+
+---
+
+## 🛠️ Setup & Configuration
+
+### 1. Prerequisites
+* **Java JDK 8 or 11** installed.
+* **SBT** (Scala Build Tool) installed.
+* **Python 3.x** (only for generating plots).
+
+### 2. Environment Variables
+This project requires access to an Azure Data Lake Gen2 Storage Account.
+Create a file named `.env` in the root directory (copy from `.env.template`):
+
+```ini
+# .env file
+STORAGE_ACCOUNT_NAME=your_storage_account_name
+AZURE_ACCESS_KEY=your_azure_access_key
+CONTAINER_NAME=your_container_name
+```
+
+## ⚡ How to Run
+
+### 1. Run the Benchmark (Scala)
+Open a terminal in the project root and run:
 
 ```bash
-# Create the virtual environment
-python -m venv .venv
+sbt run
+```
 
-# Activate the virtual environment
-# Windows (Command Prompt):
-.venv\Scripts\activate.bat
-# Windows (PowerShell):
-.venv\Scripts\Activate.ps1
-# Linux/Mac:
-source .venv/bin/activate
+* This will compile the Scala code.
 
-#Running the reader and writer scripts from src/workload:
-python src/workload/reader.py --city Paris --id 26
-The arguments can be ommited for the city, in which case all the values in the table will be printed.
-Also, it is not necesarry for all the arguments to be used.
+* It will automatically detect the bundled hadoop.dll for Windows support.
 
-Writer example:
-python src/workload/writer.py --city Paris --id 26 --value 450.5
+* It will execute 4 scenarios (none, latency, region_failure, network_partition) across 5 concurrency levels (5, 10, 15, 25, 50 writers).
 
-Before running a writer script, an environment variable can be set in the shell to inject a fault:
-$env:FAULT_MODE = "network_partition"
+* Results are saved to results/benchmark_results_scala.csv.
 
-Other values: "latency", "region_failure" and "none".
+---
 
-A whole benchmark can be run with:
-python run_benchmark.py
+## 📊 Expected Results
 
-Generate OCC graph:
-python src/metrics/analyzer.py
+The benchmark produces a CSV file analyzing the **Conflict Rate (Rc)**.
+
+| Scenario | Expected Behavior |
+| :--- | :--- |
+| **None (Baseline)** | High Conflict Rate (~90%+). High contention for a single resource. 0 Failures. |
+| **Latency** | Similar Conflict Rate to Baseline, but higher execution duration. 0 Failures. |
+| **Network Partition** | ~50% Failures (Timeouts). The remaining 50% compete for resources (Success/Conflict). |
+| **Region Failure** | 100% Failures. 0 Success. 0 Conflicts (System is unreachable). |
