@@ -10,4 +10,8 @@
 
 .python-version
 .env
+/target
+/project/target
+*.log
+.bsp
 
