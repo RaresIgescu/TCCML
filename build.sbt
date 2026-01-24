@@ -41,3 +41,5 @@ javaOptions ++= Seq(
   "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
   "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
 )
+
+excludeDependencies += "org.slf4j" % "slf4j-simple"
