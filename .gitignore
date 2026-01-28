@@ -1,17 +1,18 @@
 /.idea/
 /.venv/
 /.vscode/
+/__pycache__//
 
 /src/hadoop/
 /src/spark_ivy_cache/
-
-/src/workload/__pycache__/
 /src/fault_injectors/__pycache__/
+/src/workload/__pycache__/
+
+/target
+/project/target
 
 .python-version
 .env
-/target
-/project/target
 *.log
 .bsp
 
