@@ -38,7 +38,7 @@ The core engine was **re-engineered in Scala** to leverage the JVM's native mult
 
 ## 🚀 Key Features
 
-* **Native Windows Portability:** Includes a bundled `hadoop/` directory with `winutils.exe` and `hadoop.dll`. The application programmatically loads these binaries, allowing it to **run on Windows out-of-the-box** without modifying `System32` or Environment Variables.
+* **Windows Support (with winutils):** Spark/Hadoop on Windows requires `winutils.exe`. This repo expects you to either set `HADOOP_HOME` / `hadoop.home.dir` or provide `./hadoop/bin/winutils.exe` for portability.
 * **Scientific Fault Injection:**
     * **Latency Injection:** Simulates variable network lag (200ms - 1000ms).
     * **Network Partition:** Simulates a "Split-Brain" scenario where 50% of nodes lose connectivity (Timeouts).
@@ -50,11 +50,29 @@ The core engine was **re-engineered in Scala** to leverage the JVM's native mult
 ## 🛠️ Setup & Configuration
 
 ### 1. Prerequisites
-* **Java JDK 8 or 11** installed.
+* **Java JDK 17** installed (matches the current sbt output / Spark 3.5).
 * **SBT** (Scala Build Tool) installed.
 * **Python 3.x** (only for generating plots).
 
-### 2. Environment Variables
+### 2. Windows only: configure Hadoop winutils
+
+On Windows, Hadoop will error with: `HADOOP_HOME and hadoop.home.dir are unset` unless it can find `winutils.exe`.
+
+Additionally, Spark/Hadoop can require `hadoop.dll` to satisfy JNI calls such as `NativeIO$Windows.access0`.
+
+Choose one:
+
+1) **Portable (recommended):** create `hadoop/bin/winutils.exe` under the project root.
+
+    Also place `hadoop/bin/hadoop.dll` next to it.
+
+2) **System-wide:** set `HADOOP_HOME` to a folder that contains `bin/winutils.exe`.
+
+    Ensure it also contains `bin/hadoop.dll`.
+
+Note: this project depends on Hadoop **3.3.4** (see `build.sbt`), so use a matching winutils build.
+
+### 3. Environment Variables
 This project requires access to an Azure Data Lake Gen2 Storage Account.
 Create a file named `.env` in the root directory (copy from `.env.template`):
 

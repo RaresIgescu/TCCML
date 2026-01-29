@@ -20,12 +20,13 @@ object BenchmarkApp {
   var deltaTablePath: String = _
   
   val csvFile = "results/benchmark_results_scala.csv"
-  val concurrencyLevels = Seq(5, 10, 15, 25, 50) 
+  val concurrencyLevels = Seq(5, 10, 15) 
   val faultModes = Seq("none", "latency", "region_failure", "network_partition")
 
   def main(args: Array[String]): Unit = {
     // 1. SETUP HADOOP PORTABIL (Critic pentru Windows)
     setupHadoopOnWindows()
+    val isWindows = System.getProperty("os.name").toLowerCase.contains("win")
 
     println("--- INITIALIZING CONFIGURATION ---")
     loadEnvVariables()
@@ -63,35 +64,79 @@ object BenchmarkApp {
 
     spark.stop()
     println("\n[DONE] All benchmarks complete.")
+
+    // When running via `sbt run` with `fork := true` on Windows, lingering non-daemon threads (Spark/Hadoop/Azure FS)
+    // can keep the forked JVM alive even after the main method finishes.
+    if (isWindows) System.exit(0)
   }
 
   // --- SOLUȚIA PORTABILĂ PENTRU WINDOWS ---
   def setupHadoopOnWindows(): Unit = {
     if (System.getProperty("os.name").toLowerCase.contains("win")) {
-      try {
-        // 1. Găsim calea absolută către folderul 'hadoop' din proiect
-        val projectRoot = new File(".").getAbsolutePath
-        val hadoopDir = new File(projectRoot, "hadoop")
-        val hadoopBin = new File(hadoopDir, "bin")
-        val hadoopDll = new File(hadoopBin, "hadoop.dll")
+      val alreadySet = Option(System.getProperty("hadoop.home.dir")).map(_.trim).filter(_.nonEmpty)
+      val fromEnv = Option(System.getenv("HADOOP_HOME")).map(_.trim).filter(_.nonEmpty)
 
-        if (hadoopDir.exists() && hadoopDll.exists()) {
-          // 2. Setăm variabila HADOOP_HOME
-          System.setProperty("hadoop.home.dir", hadoopDir.getAbsolutePath)
-          
-          // 3. TRUCUL MAGIC: Încărcăm DLL-ul manual! 
-          // Asta rezolvă "UnsatisfiedLinkError" fără a copia fișierul în System32.
-          System.load(hadoopDll.getAbsolutePath)
-          
-          println(f"[WINDOWS CONFIG] Successfully loaded Hadoop DLL from: ${hadoopDll.getAbsolutePath}")
-        } else {
-          println("[WARNING] 'hadoop/bin/hadoop.dll' not found in project. Windows execution might fail.")
-        }
-      } catch {
-        case e: UnsatisfiedLinkError => 
-          println("[WARNING] Failed to load hadoop.dll manually. It might already be loaded or in System32.")
-        case e: Exception =>
-          println(f"[WARNING] Error setting up Hadoop: ${e.getMessage}")
+      // Prefer explicit user configuration, then HADOOP_HOME, then a bundled ./hadoop folder.
+      val projectRoot = new File(".").getAbsoluteFile
+      val bundledHadoopHome = new File(projectRoot, "hadoop")
+      val candidateHome = alreadySet
+        .orElse(fromEnv)
+        .orElse(if (bundledHadoopHome.exists()) Some(bundledHadoopHome.getAbsolutePath) else None)
+
+      candidateHome match {
+        case Some(homePath) =>
+          val homeDir = new File(homePath)
+          val binDir = new File(homeDir, "bin")
+          val winutils = new File(binDir, "winutils.exe")
+          val hadoopDll = new File(binDir, "hadoop.dll")
+          System.setProperty("hadoop.home.dir", homeDir.getAbsolutePath)
+
+          if (!winutils.exists()) {
+            System.err.println("\n[CRITICAL ERROR] Windows requires Hadoop winutils.exe for Spark/Hadoop file operations.")
+            System.err.println(f"hadoop.home.dir is set to: ${homeDir.getAbsolutePath}")
+            System.err.println("Expected to find: <hadoop.home.dir>/bin/winutils.exe")
+            System.err.println("\nFix options:")
+            System.err.println("  1) Create ./hadoop/bin and place winutils.exe there (recommended for portability)")
+            System.err.println("  2) Or set HADOOP_HOME to a folder that contains bin/winutils.exe")
+            System.err.println("\nNote: Your project uses Hadoop 3.3.4 (see build.sbt), so match winutils accordingly.")
+            System.exit(1)
+          } else {
+            println(f"[WINDOWS CONFIG] Using Hadoop home: ${homeDir.getAbsolutePath}")
+            println(f"[WINDOWS CONFIG] Found winutils.exe at: ${winutils.getAbsolutePath}")
+          }
+
+          if (!hadoopDll.exists()) {
+            System.err.println("\n[CRITICAL ERROR] Hadoop native library (hadoop.dll) not found.")
+            System.err.println("Spark/Hadoop on Windows often requires <hadoop.home.dir>/bin/hadoop.dll to provide JNI methods (e.g. NativeIO$Windows.access0).")
+            System.err.println(f"Expected to find: ${hadoopDll.getAbsolutePath}")
+            System.err.println("\nFix options:")
+            System.err.println("  1) Place a Hadoop 3.3.4-compatible hadoop.dll in ./hadoop/bin (portable)")
+            System.err.println("  2) Or point HADOOP_HOME to a Hadoop home that includes bin/hadoop.dll")
+            System.exit(1)
+          }
+
+          // Force-load the correct DLL early so Hadoop doesn't pick up an incompatible hadoop.dll from PATH/System32.
+          try {
+            System.load(hadoopDll.getAbsolutePath)
+            println(f"[WINDOWS CONFIG] Loaded hadoop.dll from: ${hadoopDll.getAbsolutePath}")
+          } catch {
+            case e: UnsatisfiedLinkError =>
+              System.err.println("\n[CRITICAL ERROR] Failed to load hadoop.dll.")
+              System.err.println(f"Attempted: ${hadoopDll.getAbsolutePath}")
+              System.err.println(f"Reason: ${e.getMessage}")
+              System.err.println("\nThis usually means the DLL is missing dependencies (e.g., MSVC runtime) or a different hadoop.dll version was loaded earlier from PATH.")
+              System.err.println("Try running from a fresh shell and ensure no other hadoop.dll is present in PATH/System32.")
+              System.exit(1)
+          }
+
+        case None =>
+          System.err.println("\n[CRITICAL ERROR] HADOOP_HOME / hadoop.home.dir is not set on Windows.")
+          System.err.println("Spark on Windows needs a Hadoop home containing bin/winutils.exe.")
+          System.err.println("\nFix options:")
+          System.err.println("  1) Add winutils.exe under ./hadoop/bin and rerun")
+          System.err.println("  2) Or set HADOOP_HOME to a folder that contains bin/winutils.exe")
+          System.err.println("\nNote: Your project uses Hadoop 3.3.4 (see build.sbt), so match winutils accordingly.")
+          System.exit(1)
       }
     }
   }
@@ -132,18 +177,26 @@ object BenchmarkApp {
 
   def runScenario(spark: SparkSession, writers: Int, mode: String): Unit = {
     println(f"\n>>> SCENARIO: Writers=$writers, Fault=$mode")
-    implicit val ec = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(writers))
-    val startTime = System.currentTimeMillis()
-    val futures = (1 to writers).map { id => Future { executeWriter(spark, id, mode) } }
-    val combined = Future.sequence(futures)
-    val results = Await.result(combined, 5.minutes)
-    val durationMs = System.currentTimeMillis() - startTime
-    val success = results.count(_ == "Success")
-    val conflicts = results.count(_ == "Conflict")
-    val failures = results.count(_ == "Fault/Error")
-    val conflictRate = if (writers > 0) conflicts.toDouble / writers else 0.0
-    println(f"     Results: Success=$success, Conflicts=$conflicts, Failures=$failures")
-    appendToCsv(writers, mode, success, conflicts, failures, conflictRate, durationMs)
+    val executor = Executors.newFixedThreadPool(writers)
+    implicit val ec: ExecutionContext = ExecutionContext.fromExecutorService(executor)
+
+    try {
+      val startTime = System.currentTimeMillis()
+      val futures = (1 to writers).map { id => Future { executeWriter(spark, id, mode) } }
+      val combined = Future.sequence(futures)
+      val results = Await.result(combined, 5.minutes)
+      val durationMs = System.currentTimeMillis() - startTime
+      val success = results.count(_ == "Success")
+      val conflicts = results.count(_ == "Conflict")
+      val failures = results.count(_ == "Fault/Error")
+      val conflictRate = if (writers > 0) conflicts.toDouble / writers else 0.0
+      println(f"     Results: Success=$success, Conflicts=$conflicts, Failures=$failures")
+      appendToCsv(writers, mode, success, conflicts, failures, conflictRate, durationMs)
+    } finally {
+      // Important: the thread pool uses non-daemon threads; if not shut down, the JVM will hang after [DONE].
+      executor.shutdown()
+      executor.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)
+    }
   }
 
   def executeWriter(spark: SparkSession, id: Int, mode: String): String = {
