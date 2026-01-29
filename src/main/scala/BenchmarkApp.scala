@@ -20,11 +20,12 @@ object BenchmarkApp {
   var deltaTablePath: String = _
   
   val csvFile = "results/benchmark_results_scala.csv"
-  val concurrencyLevels = Seq(5, 10, 15, 20, 50, 100, 150, 200) 
+  val concurrencyLevels = Seq(5, 10, 15, 20, 50, 100, 150, 200) // full-run
+  // val concurrencyLevels = Seq( 5, 10, 15) // test
   val faultModes = Seq("none", "latency", "region_failure", "network_partition")
 
   def main(args: Array[String]): Unit = {
-    // 1. SETUP HADOOP PORTABIL (Critic pentru Windows)
+    // SETUP HADOOP PORTABIL (Critic pentru Windows)
     setupHadoopOnWindows()
     val isWindows = System.getProperty("os.name").toLowerCase.contains("win")
 
@@ -65,8 +66,6 @@ object BenchmarkApp {
     spark.stop()
     println("\n[DONE] All benchmarks complete.")
 
-    // When running via `sbt run` with `fork := true` on Windows, lingering non-daemon threads (Spark/Hadoop/Azure FS)
-    // can keep the forked JVM alive even after the main method finishes.
     if (isWindows) System.exit(0)
   }
 
@@ -76,7 +75,6 @@ object BenchmarkApp {
       val alreadySet = Option(System.getProperty("hadoop.home.dir")).map(_.trim).filter(_.nonEmpty)
       val fromEnv = Option(System.getenv("HADOOP_HOME")).map(_.trim).filter(_.nonEmpty)
 
-      // Prefer explicit user configuration, then HADOOP_HOME, then a bundled ./hadoop folder.
       val projectRoot = new File(".").getAbsoluteFile
       val bundledHadoopHome = new File(projectRoot, "hadoop")
       val candidateHome = alreadySet
@@ -115,7 +113,6 @@ object BenchmarkApp {
             System.exit(1)
           }
 
-          // Force-load the correct DLL early so Hadoop doesn't pick up an incompatible hadoop.dll from PATH/System32.
           try {
             System.load(hadoopDll.getAbsolutePath)
             println(f"[WINDOWS CONFIG] Loaded hadoop.dll from: ${hadoopDll.getAbsolutePath}")
@@ -224,7 +221,12 @@ object BenchmarkApp {
   }
 
   def appendToCsv(w: Int, m: String, s: Int, c: Int, f: Int, r: Double, d: Long): Unit = {
-    val pw = new PrintWriter(new FileOutputStream(new File(csvFile), true)); val ts = LocalDateTime.now().toString; pw.write(f"$ts,$w,$m,$s,$c,$f,$r%.2f,$d\n"); pw.close()
+    val fw = new FileOutputStream(new File(csvFile), true)
+    val pw = new PrintWriter(fw)
+    val ts = LocalDateTime.now().toString
+    pw.println(s"$ts,$w,$m,$s,$c,$f,$r,$d")
+    pw.flush()
+    pw.close()
   }
 
   def ensureTableExists(spark: SparkSession): Unit = {
