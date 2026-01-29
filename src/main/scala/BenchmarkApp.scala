@@ -20,7 +20,7 @@ object BenchmarkApp {
   var deltaTablePath: String = _
   
   val csvFile = "results/benchmark_results_scala.csv"
-  val concurrencyLevels = Seq(5, 10, 15) 
+  val concurrencyLevels = Seq(5, 10, 15, 20, 50, 100, 150, 200) 
   val faultModes = Seq("none", "latency", "region_failure", "network_partition")
 
   def main(args: Array[String]): Unit = {
